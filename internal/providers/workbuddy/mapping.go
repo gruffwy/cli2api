@@ -67,6 +67,29 @@ func applyChatReasoning(obj map[string]any, req translate.ChatRequest, storedLev
 	if obj == nil {
 		return
 	}
+	// Flash accepts explicit effort values even when /v3/config only supplies
+	// a default. Preserve them for upstream validation instead of silently
+	// clamping to that default (or converting max to xhigh).
+	if isDeepSeek41Flash(req.Model) {
+		var explicit string
+		if json.Unmarshal(req.ReasoningEffort, &explicit) != nil {
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(req.ReasoningEffort, &fields) == nil {
+				for _, key := range []string{"effort", "level", "type"} {
+					if json.Unmarshal(fields[key], &explicit) == nil && strings.TrimSpace(explicit) != "" {
+						break
+					}
+				}
+			}
+		}
+		if strings.TrimSpace(explicit) != "" {
+			delete(obj, "reasoning")
+			obj["reasoning_effort"] = explicit
+			obj["reasoning_summary"] = "auto"
+			obj["verbosity"] = "high"
+			return
+		}
+	}
 	level := requestedReasoningLevel(req)
 	if level == "" {
 		level = storedLevel
@@ -88,7 +111,7 @@ func applyChatReasoning(obj map[string]any, req translate.ChatRequest, storedLev
 			return
 		}
 	}
-	if level == "max" {
+	if level == "max" && !isDeepSeek41Flash(req.Model) {
 		level = "xhigh"
 	}
 	if usesTopLevelReasoningFields(req.Model) {
@@ -102,6 +125,12 @@ func applyChatReasoning(obj map[string]any, req translate.ChatRequest, storedLev
 	delete(obj, "reasoning_summary")
 	delete(obj, "verbosity")
 	obj["reasoning"] = map[string]any{"effort": level, "summary": "auto"}
+}
+
+func isDeepSeek41Flash(model string) bool {
+	key := accounts.CanonicalModelID(model)
+	key = strings.TrimPrefix(key, "workbuddy/")
+	return key == "deepseek-v4.1-flash"
 }
 
 func clearChatReasoning(obj map[string]any) {
