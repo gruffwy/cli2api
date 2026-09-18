@@ -110,7 +110,7 @@ func TestTranslateResponsesDropsAutoChoiceWhenToolsNormalizeEmpty(t *testing.T) 
 	if len(chat.Tools) != 0 || len(chat.ToolChoice) != 0 {
 		t.Fatalf("tools=%q choice=%q", chat.Tools, chat.ToolChoice)
 	}
-	if err := ValidateChatRequest(chat); err != nil {
+	if err := ValidateChatRequest(&chat); err != nil {
 		t.Fatal(err)
 	}
 }
