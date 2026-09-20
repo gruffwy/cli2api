@@ -42,7 +42,7 @@
   ],
   "tools": [],
   "parameters": {
-    "max_tokens": 32000
+    "max_tokens": 128000
   },
   "business": {
     "product": "cli",

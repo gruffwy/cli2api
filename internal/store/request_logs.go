@@ -183,6 +183,7 @@ func (s *Store) SummarizeRequestLogs(ctx context.Context, from, to time.Time) (a
 SELECT
   COUNT(*),
   COALESCE(SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END), 0),
+  COALESCE(SUM(CASE WHEN status = 'incomplete' THEN 1 ELSE 0 END), 0),
   COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END), 0),
   COALESCE(SUM(CASE WHEN status = 'canceled' THEN 1 ELSE 0 END), 0),
   COALESCE(SUM(CASE WHEN stream = 1 THEN 1 ELSE 0 END), 0),
@@ -194,7 +195,7 @@ SELECT
 FROM request_logs`+where, args...)
 	var avgLatency, avgTTFB sql.NullFloat64
 	if err := row.Scan(
-		&stats.Totals.Requests, &stats.Totals.OK, &stats.Totals.Error, &stats.Totals.Canceled, &stats.Totals.Streaming,
+		&stats.Totals.Requests, &stats.Totals.OK, &stats.Totals.Incomplete, &stats.Totals.Error, &stats.Totals.Canceled, &stats.Totals.Streaming,
 		&avgLatency, &avgTTFB, &stats.Tokens.Prompt, &stats.Tokens.Completion, &stats.Tokens.CacheRead,
 	); err != nil {
 		return accounts.RequestStats{}, fmt.Errorf("summarize request logs: %w", err)

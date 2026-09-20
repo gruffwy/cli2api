@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
 
+export const DEFAULT_MAX_TOKENS = 128000;
+
 export function canonicalModelID(model) {
   if (!model) return "auto";
   return String(model).trim().toLowerCase().replace(/[\s_]+/g, "-");
@@ -520,7 +522,7 @@ export function buildPlainChatBody({
   model = "auto",
   modelConfig: routedModel,
   system,
-  maxTokens = 32000,
+  maxTokens = DEFAULT_MAX_TOKENS,
   template,
   enableReasoning = false,
   enableThinking,
@@ -595,7 +597,7 @@ export function buildPlainChatBody({
 
   const parameters = {
     ...(base.parameters || {}),
-    max_tokens: maxTokens || base.parameters?.max_tokens || 32000,
+    max_tokens: maxTokens || base.parameters?.max_tokens || DEFAULT_MAX_TOKENS,
     ...(normalizedEffort !== undefined ? { reasoning_effort: normalizedEffort } : {}),
     ...(effectiveThinking !== undefined ? { enable_thinking: effectiveThinking } : {}),
     ...(reasoningBudgetTokens !== undefined ? { reasoning_budget_tokens: reasoningBudgetTokens } : {}),

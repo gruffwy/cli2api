@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { register } from "node:module";
 import crypto from "node:crypto";
-import { buildPlainChatBody, wantsReasoning, estimateTokens, estimatePromptTokens, diagnoseOpenAIToolHistory, summarizeNormalizedToolHistory } from "./plaintext.mjs";
+import { DEFAULT_MAX_TOKENS, buildPlainChatBody, wantsReasoning, estimateTokens, estimatePromptTokens, diagnoseOpenAIToolHistory, summarizeNormalizedToolHistory } from "./plaintext.mjs";
 import { createModelCatalogSnapshot, DEFAULT_CATALOG_TTL_MS, resolveCatalogModel } from "./catalog.mjs";
 import { parseNestedOpenAIChunks, readSSEText, pipeNestedSseToOpenAI } from "./sse.mjs";
 import { inspectQodercliSource, NEEDLES, PINNED_QODERCLI_VERSION, readQodercliVersion } from "./compat.mjs";
@@ -344,7 +344,7 @@ async function prepareUpstream(reqBody) {
     model: requestedModel,
     modelConfig: catalogModel,
     system: reqBody.system,
-    maxTokens: reqBody.max_tokens || 32000,
+    maxTokens: reqBody.max_tokens || DEFAULT_MAX_TOKENS,
     template,
     enableReasoning: wantsReasoning(reqBody),
     enableThinking: typeof reqBody.enable_thinking === "boolean" ? reqBody.enable_thinking : undefined,
