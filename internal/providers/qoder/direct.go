@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -20,10 +22,11 @@ import (
 // Direct talks to the Qoder chat gateway from this process. It does not load
 // the CLI bundle. Login and quota stay on the per-account worker.
 type Direct struct {
-	store  CredentialStore
-	region func(ctx context.Context, accountID string) (string, error)
-	http   *http.Client
-	now    func() time.Time
+	store      CredentialStore
+	region     func(ctx context.Context, accountID string) (string, error)
+	http       *http.Client
+	now        func() time.Time
+	runtimeDir string
 }
 
 func NewDirect(store CredentialStore, region func(context.Context, string) (string, error)) *Direct {
@@ -42,6 +45,12 @@ func (d *Direct) SetHTTP(client *http.Client) {
 	d.http = client
 }
 
+// SetRuntimeDir connects chat to the credentials the existing worker refreshes.
+// It is configured before the adapter starts serving requests.
+func (d *Direct) SetRuntimeDir(directory string) {
+	d.runtimeDir = strings.TrimSpace(directory)
+}
+
 type directPrepared struct {
 	request *http.Request
 	model   string
@@ -56,6 +65,21 @@ func (d *Direct) prepare(ctx context.Context, accountID string, req translate.Ch
 	if err != nil {
 		return directPrepared{}, err
 	}
+	region := "global"
+	if d.region != nil {
+		region, err = d.region(ctx, accountID)
+		if err != nil {
+			return directPrepared{}, err
+		}
+	}
+	if d.runtimeDir != "" {
+		current, readErr := ReadRuntimeCredential(filepath.Join(d.runtimeDir, "runtime", accountID), region)
+		if readErr == nil {
+			credential = current
+		} else if !errors.Is(readErr, os.ErrNotExist) {
+			return directPrepared{}, readErr
+		}
+	}
 	user, err := DecryptCLIUser(credential.UserBlob, credential.MachineID)
 	if err != nil {
 		return directPrepared{}, err
@@ -63,13 +87,6 @@ func (d *Direct) prepare(ctx context.Context, accountID string, req translate.Ch
 	session, err := NewSession(user)
 	if err != nil {
 		return directPrepared{}, err
-	}
-	region := "global"
-	if d.region != nil {
-		region, err = d.region(ctx, accountID)
-		if err != nil {
-			return directPrepared{}, err
-		}
 	}
 	plain := BuildPlainChatBody(req, d.now())
 	model, _ := plain["model_config"].(map[string]any)

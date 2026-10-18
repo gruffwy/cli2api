@@ -51,19 +51,28 @@ func MaterializeHome(ctx context.Context, store CredentialStore, account account
 }
 
 func SyncCredential(ctx context.Context, store CredentialStore, account accounts.Account, home, authType string) error {
-	authDir := AuthDir(home, account.ProviderRegion)
+	credential, err := ReadRuntimeCredential(home, account.ProviderRegion)
+	if err != nil {
+		return err
+	}
+	return store.SaveCredential(ctx, account.ID, authType, credential)
+}
+
+// ReadRuntimeCredential reads the tokens refreshed by the account's CLI worker.
+func ReadRuntimeCredential(home, region string) (accounts.NativeCredential, error) {
+	authDir := AuthDir(home, region)
 	userBlob, err := os.ReadFile(filepath.Join(authDir, "user"))
 	if err != nil {
-		return fmt.Errorf("read qoder user credential: %w", err)
+		return accounts.NativeCredential{}, fmt.Errorf("read qoder user credential: %w", err)
 	}
 	machineID, err := os.ReadFile(filepath.Join(authDir, "machine_id"))
 	if err != nil {
-		return fmt.Errorf("read qoder machine id: %w", err)
+		return accounts.NativeCredential{}, fmt.Errorf("read qoder machine id: %w", err)
 	}
-	return store.SaveCredential(ctx, account.ID, authType, accounts.NativeCredential{
+	return accounts.NativeCredential{
 		UserBlob:  userBlob,
 		MachineID: string(machineID),
-	})
+	}, nil
 }
 
 type RuntimePaths struct {

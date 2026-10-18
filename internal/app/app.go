@@ -120,13 +120,15 @@ func New(cfg config.Config) *App {
 	providerReg.Register(zhipu.NewClient(store).Adapter())
 	qoderClient := qoder.NewClient()
 	qoderClient.Bind(manager.AccountURL, manager.ProxyAPIKey)
-	qoderClient.SetDirect(qoder.NewDirect(store, func(ctx context.Context, accountID string) (string, error) {
+	qoderDirect := qoder.NewDirect(store, func(ctx context.Context, accountID string) (string, error) {
 		account, err := store.Get(ctx, accountID)
 		if err != nil {
 			return "", err
 		}
 		return account.ProviderRegion, nil
-	}))
+	})
+	qoderDirect.SetRuntimeDir(runtimeDir)
+	qoderClient.SetDirect(qoderDirect)
 	providerReg.Register(qoderClient.Adapter())
 	manager.SetProviders(providerReg)
 	manager.SetWorkBuddy(workbuddyClient)
