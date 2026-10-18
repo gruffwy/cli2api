@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   buildPlainChatBody,
+  DEFAULT_MAX_TOKENS,
   canonicalModelID,
   wantsReasoning,
   estimateTokens,
@@ -12,6 +13,18 @@ import {
   normalizeToolResultContent,
   summarizeNormalizedToolHistory,
 } from "../src/plaintext.mjs";
+
+test("defaults Qoder output budget to 128k while preserving an explicit limit", () => {
+  const defaultBody = buildPlainChatBody({ messages: [{ role: "user", content: "hi" }] });
+  assert.equal(DEFAULT_MAX_TOKENS, 128000);
+  assert.equal(defaultBody.parameters.max_tokens, 128000);
+
+  const explicitBody = buildPlainChatBody({
+    messages: [{ role: "user", content: "hi" }],
+    maxTokens: 8192,
+  });
+  assert.equal(explicitBody.parameters.max_tokens, 8192);
+});
 
 test("does not statically remap requested model ids", () => {
   const body = buildPlainChatBody({ messages: [{ role: "user", content: "hi" }], model: "deepseek-v4-flash" });

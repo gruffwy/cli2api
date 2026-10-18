@@ -285,7 +285,7 @@ func BuildPlainChatBody(req translate.ChatRequest, now time.Time) map[string]any
 	if modelKey == "" {
 		modelKey = "auto"
 	}
-	maxTokens := 32000
+	maxTokens := 128000
 	if n, ok := rawNumber(req.MaxCompletionTokens); ok && n > 0 {
 		maxTokens = n
 	} else if n, ok := rawNumber(req.MaxTokens); ok && n > 0 {
