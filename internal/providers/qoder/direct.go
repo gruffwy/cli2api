@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -37,6 +39,8 @@ type Direct struct {
 	ttfb time.Duration
 	// guard is the optional per-account traffic limiter (default off).
 	guard *trafficGuard
+	// runtimeDir supplies refreshed credentials only for legacy CLI accounts.
+	runtimeDir string
 }
 
 func NewDirect(store CredentialStore, region func(context.Context, string) (string, error)) *Direct {
@@ -55,6 +59,10 @@ func (d *Direct) SetBridgeResolver(fn func(ctx context.Context, accountID string
 		return
 	}
 	d.bridgeOf = fn
+}
+
+func (d *Direct) SetRuntimeDir(directory string) {
+	d.runtimeDir = strings.TrimSpace(directory)
 }
 
 func (d *Direct) SetHTTP(client *http.Client) {
@@ -116,7 +124,17 @@ func (d *Direct) prepare(ctx context.Context, accountID string, req translate.Ch
 		}
 	}
 
-	// 2. Legacy fallback: account has no PAT, load encrypted CLI user blob.
+	if region == "" {
+		region = "global"
+		if d.region != nil {
+			region, err = d.region(ctx, accountID)
+			if err != nil {
+				return directPrepared{}, err
+			}
+		}
+	}
+
+	// 2. Legacy fallback: prefer the worker's refreshed CLI credentials.
 	if session == nil {
 		if d.store == nil {
 			return directPrepared{}, fmt.Errorf("qoder direct client is not configured")
@@ -124,6 +142,14 @@ func (d *Direct) prepare(ctx context.Context, accountID string, req translate.Ch
 		credential, err := d.store.LoadCredential(ctx, accountID)
 		if err != nil {
 			return directPrepared{}, err
+		}
+		if d.runtimeDir != "" {
+			current, readErr := ReadRuntimeCredential(filepath.Join(d.runtimeDir, "runtime", accountID), region)
+			if readErr == nil {
+				credential = current
+			} else if !errors.Is(readErr, os.ErrNotExist) {
+				return directPrepared{}, readErr
+			}
 		}
 		user, err = DecryptCLIUser(credential.UserBlob, credential.MachineID)
 		if err != nil {
@@ -135,15 +161,6 @@ func (d *Direct) prepare(ctx context.Context, accountID string, req translate.Ch
 		}
 	}
 
-	if region == "" {
-		region = "global"
-		if d.region != nil {
-			region, err = d.region(ctx, accountID)
-			if err != nil {
-				return directPrepared{}, err
-			}
-		}
-	}
 	var entry map[string]any
 	if catalogOf != nil {
 		req, entry, err = resolveCatalogModel(ctx, catalogOf, req)
@@ -452,7 +469,7 @@ func BuildPlainChatBody(req translate.ChatRequest, now time.Time) map[string]any
 	if modelKey == "" {
 		modelKey = "auto"
 	}
-	maxTokens := 32000
+	maxTokens := 128000
 	if n, ok := rawNumber(req.MaxCompletionTokens); ok && n > 0 {
 		maxTokens = n
 	} else if n, ok := rawNumber(req.MaxTokens); ok && n > 0 {

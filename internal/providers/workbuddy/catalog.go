@@ -44,7 +44,12 @@ func catalogModel(model catalogModelEntry) providers.ModelInfo {
 		defaultLevel = providers.NormalizeReasoningLevel(model.Reasoning.Effort)
 	}
 	if len(options) == 0 && defaultLevel != "" {
-		options = []string{defaultLevel}
+		if isDeepSeek41Flash(model.ID) && len(model.Reasoning.SupportedEfforts) == 0 {
+			// This catalog omits the verified Flash effort options.
+			options = []string{"low", "high", "max"}
+		} else {
+			options = []string{defaultLevel}
+		}
 	}
 	if defaultLevel == "" && len(options) > 0 {
 		defaultLevel = options[0]
