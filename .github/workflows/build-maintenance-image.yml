@@ -4,6 +4,11 @@ on:
   push:
     branches: [maintenance/v0.7.12-gruffwy]
   workflow_dispatch:
+    inputs:
+      updater_assets_only:
+        description: Build updater assets from the existing release tag without publishing an image
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -18,6 +23,7 @@ env:
 
 jobs:
   go:
+    if: ${{ !inputs.updater_assets_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -36,6 +42,7 @@ jobs:
           python3 scripts/release-notes.py validate
 
   worker:
+    if: ${{ !inputs.updater_assets_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -49,6 +56,7 @@ jobs:
         working-directory: worker
 
   frontend:
+    if: ${{ !inputs.updater_assets_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -71,6 +79,7 @@ jobs:
         working-directory: frontend
 
   secrets:
+    if: ${{ !inputs.updater_assets_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -84,12 +93,53 @@ jobs:
       - name: Scan git history for secrets
         run: gitleaks detect --source . --redact
 
+  updater-assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      source-sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.updater_assets_only && format('refs/tags/{0}', env.RELEASE_VERSION) || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Resolve updater source
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Build updater assets and verify checksums
+        env:
+          APP_VERSION: ${{ env.RELEASE_VERSION }}
+          APP_COMMIT: ${{ steps.source.outputs.sha }}
+        run: |
+          bash scripts/build-updater-assets.sh
+          cd dist/updater
+          sha256sum --check cli2api-updater_checksums.txt
+          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maintenance-updater-assets
+          path: dist/updater/cli2api-updater_*
+          if-no-files-found: error
+          retention-days: 7
+
   image:
+    if: ${{ !inputs.updater_assets_only }}
     needs: [go, worker, frontend, secrets]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Refuse to overwrite a published version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing_refs="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_VERSION" --jq '.[].ref')"
+          if grep -Fxq "refs/tags/$RELEASE_VERSION" <<< "$existing_refs"; then
+            echo "Release tag $RELEASE_VERSION already exists; bump RELEASE_VERSION or use updater_assets_only."
+            exit 1
+          fi
       - name: Set immutable image tags
         id: image
         shell: bash
@@ -122,17 +172,47 @@ jobs:
           cache-to: type=gha,mode=max
 
   release:
-    needs: image
+    if: ${{ !inputs.updater_assets_only }}
+    needs: [image, updater-assets]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: maintenance-updater-assets
+          path: dist/updater
       - name: Publish maintenance release without moving official aliases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --title "CLI2API $RELEASE_VERSION" \
-            --notes-file changelog/unreleased/downstream-provider-compatibility-v0712.md --latest=false
+            --notes-file changelog/unreleased/downstream-provider-compatibility-v0712.md --latest=false \
+            dist/updater/cli2api-updater_*
+
+  supplement-updater-assets:
+    if: ${{ inputs.updater_assets_only }}
+    needs: updater-assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: maintenance-updater-assets
+          path: dist/updater
+      - name: Attach updater assets to the existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SOURCE_SHA: ${{ needs.updater-assets.outputs.source-sha }}
+        run: |
+          gh release view "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null
+          actual_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_VERSION" --jq .sha)"
+          test "$actual_sha" = "$EXPECTED_SOURCE_SHA"
+          cd dist/updater
+          sha256sum --check cli2api-updater_checksums.txt
+          gh release upload "$RELEASE_VERSION" cli2api-updater_* --repo "$GITHUB_REPOSITORY"
