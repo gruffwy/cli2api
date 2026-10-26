@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RELEASE_VERSION: v0.7.12-gruffwy.1
+  RELEASE_VERSION: v0.7.12-gruffwy.2
 
 jobs:
   go:

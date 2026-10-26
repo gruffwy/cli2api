@@ -129,7 +129,7 @@ func New(cfg config.Config) *App {
 		}
 		return account.ProviderRegion, nil
 	})
-	qoderDirect.SetRuntimeDir(cfg.DataDir)
+	qoderDirect.SetRuntimeDir(runtimeDir)
 	qoderClient.SetDirect(qoderDirect)
 	qoderClient.SetPATStore(store, func(ctx context.Context, accountID string) (string, error) {
 		account, err := store.Get(ctx, accountID)
